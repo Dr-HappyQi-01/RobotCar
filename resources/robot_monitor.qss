@@ -1,0 +1,58 @@
+QMainWindow {
+    background-color: #1f232a;
+}
+
+QMenuBar {
+    background-color: #252a33;
+    color: #e8edf2;
+}
+
+QMenuBar::item:selected {
+    background-color: #34404f;
+}
+
+QMenu {
+    background-color: #252a33;
+    color: #e8edf2;
+}
+
+QToolBar {
+    background-color: #252a33;
+    spacing: 6px;
+    border: none;
+}
+
+QDockWidget {
+    color: #e8edf2;
+    font-size: 13px;
+}
+
+QDockWidget::title {
+    background-color: #252a33;
+    text-align: left;
+    padding-left: 8px;
+    height: 24px;
+}
+
+QWidget {
+    background-color: #1f232a;
+    color: #e8edf2;
+}
+
+QTextEdit {
+    background-color: #151a20;
+    border: 1px solid #3a4657;
+    border-radius: 6px;
+    color: #dbe4ee;
+}
+
+QLabel {
+    color: #e8edf2;
+    font-size: 14px;
+}
+
+QFrame#MapViewFrame {
+    background-color: #2b313c;
+    border: 1px solid #465264;
+    border-radius: 10px;
+}
