@@ -56,3 +56,37 @@ QFrame#MapViewFrame {
     border: 1px solid #465264;
     border-radius: 10px;
 }
+
+QListWidget {
+    background-color: #151a20;
+    border: 1px solid #3a4657;
+    border-radius: 8px;
+    padding: 4px;
+}
+
+QListWidget::item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin: 2px 0px;
+}
+
+QListWidget::item:selected {
+    background-color: #3b82f6;
+    color: white;
+}
+
+QPushButton {
+    background-color: #2b313c;
+    border: 1px solid #465264;
+    border-radius: 8px;
+    padding: 6px 12px;
+    color: #e8edf2;
+}
+
+QPushButton:hover {
+    background-color: #34404f;
+}
+
+QPushButton:pressed {
+    background-color: #1f2937;
+}

@@ -4,11 +4,23 @@
 #include <QMainWindow>
 #include <QTimer>
 
+#include <ros/subscriber.h>
+#include <std_msgs/String.h>
+
 #include "robot_monitor/ros_interface.h"
 #include "robot_monitor/map_view_widget.h"
+#include "robot_monitor/trajectory_recorder.h"
+#include "robot_monitor/experiment_config.h"
+#include "robot_monitor/trajectory_storage.h"
 
 class QLabel;
 class QTextEdit;
+class QListWidget;
+class QListWidgetItem;
+class QPushButton;
+class QMenu;
+class QToolBar;
+class QDockWidget;
 
 namespace robot_monitor
 {
@@ -24,6 +36,8 @@ public:
 private slots:
     void onRosSpinOnce();
     void onUpdateUi();
+    void onMethodSelectionChanged();
+    void onTrajectorySelectionChanged();
 
 private:
     void setupUi();
@@ -32,11 +46,29 @@ private:
     void setupCentralView();
     void setupDockWidgets();
     void setupStatusBar();
+    void handleEpisodeStart();
+    void handleEpisodeEnd();
+    void episodeEventCallback(const std_msgs::String::ConstPtr& msg);
+    void refreshTrajectoryPanel();
+    void updateTrajectoryListForSelectedMethod(int preferred_trajectory_id = -1);
+    void loadSelectedTrajectoryMeta();
 
 private:
     ros::NodeHandle nh_;
     RosInterface ros_interface_;
     std::string odom_topic_;
+
+    ros::Subscriber episode_event_sub_;
+    std::string episode_event_topic_;
+
+    ExperimentConfig experiment_config_;
+    TrajectoryRecorder trajectory_recorder_;
+    TrajectoryStorage trajectory_storage_;
+    std::string database_path_;
+
+    QMenu* view_menu_;
+
+    // int episode_counter_;
 
     QTimer* ros_timer_;
     QTimer* ui_timer_;
@@ -50,7 +82,24 @@ private:
     QLabel* label_system_;
 
     QTextEdit* log_text_edit_;
+
+    QListWidget* method_list_widget_;
+    QListWidget* trajectory_list_widget_;
+    QLabel* trajectory_panel_status_label_;
+    QPushButton* button_refresh_trajectories_;
+    QPushButton* button_load_trajectory_;
+
+    std::vector<TrajectoryRecord> cached_trajectory_records_;
+    std::vector<std::string> cached_method_names_;
+
     bool odom_logged_;
+
+    QToolBar* main_tool_bar_;
+
+    QDockWidget* metrics_dock_;
+    QDockWidget* log_dock_;
+    QDockWidget* playback_dock_;
+    QDockWidget* trajectory_dock_;
 };
 
 }  // namespace robot_monitor
