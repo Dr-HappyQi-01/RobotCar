@@ -20,6 +20,165 @@
 #include <QHBoxLayout>
 #include <QMap>
 #include <QSet>
+#include <QMetaObject>
+#include <QMenu>
+#include <QMessageBox>
+#include <fstream>
+#include <sstream>
+#include <unistd.h>
+#include <sys/types.h>
+#include <fstream>
+#include <sstream>
+
+namespace
+{
+
+bool ReadProcessCpuUsagePercent(double& usage_percent)
+{
+    static bool initialized = false;
+    static long long last_proc_time = 0;
+    static long long last_total_time = 0;
+
+    std::ifstream proc_file("/proc/self/stat");
+    std::ifstream stat_file("/proc/stat");
+
+    if (!proc_file.is_open() || !stat_file.is_open())
+    {
+        return false;
+    }
+
+    std::string tmp;
+    long long utime = 0;
+    long long stime = 0;
+
+    for (int i = 0; i < 13; ++i)
+    {
+        proc_file >> tmp;
+    }
+    proc_file >> utime >> stime;
+
+    std::string cpu;
+    long long user, nice, system, idle, iowait, irq, softirq, steal;
+    stat_file >> cpu >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal;
+
+    if (cpu != "cpu")
+    {
+        return false;
+    }
+
+    const long long proc_time = utime + stime;
+    const long long total_time = user + nice + system + idle + iowait + irq + softirq + steal;
+
+    if (!initialized)
+    {
+        initialized = true;
+        last_proc_time = proc_time;
+        last_total_time = total_time;
+        usage_percent = 0.0;
+        return true;
+    }
+
+    const long long proc_delta = proc_time - last_proc_time;
+    const long long total_delta = total_time - last_total_time;
+
+    if (total_delta <= 0)
+    {
+        usage_percent = 0.0;
+    }
+    else
+    {
+        // 直接用进程时间差除以所有核心的总时间差，得出占整台电脑的绝对百分比
+        usage_percent = 100.0 * static_cast<double>(proc_delta) / static_cast<double>(total_delta);
+    }
+
+    last_proc_time = proc_time;
+    last_total_time = total_time;
+
+    return true;
+}
+
+bool ReadCpuUsagePercent(double& usage_percent)
+{
+    static long long last_user = 0;
+    static long long last_nice = 0;
+    static long long last_system = 0;
+    static long long last_idle = 0;
+    static long long last_iowait = 0;
+    static long long last_irq = 0;
+    static long long last_softirq = 0;
+    static long long last_steal = 0;
+    static bool initialized = false;
+
+    std::ifstream file("/proc/stat");
+    if (!file.is_open())
+    {
+        return false;
+    }
+
+    std::string cpu;
+    long long user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0;
+    file >> cpu >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal;
+
+    if (cpu != "cpu")
+    {
+        return false;
+    }
+
+    if (!initialized)
+    {
+        last_user = user;
+        last_nice = nice;
+        last_system = system;
+        last_idle = idle;
+        last_iowait = iowait;
+        last_irq = irq;
+        last_softirq = softirq;
+        last_steal = steal;
+        initialized = true;
+        usage_percent = 0.0;
+        return true;
+    }
+
+    const long long prev_idle = last_idle + last_iowait;
+    const long long idle_now = idle + iowait;
+
+    const long long prev_non_idle =
+        last_user + last_nice + last_system + last_irq + last_softirq + last_steal;
+    const long long non_idle_now =
+        user + nice + system + irq + softirq + steal;
+
+    const long long prev_total = prev_idle + prev_non_idle;
+    const long long total_now = idle_now + non_idle_now;
+
+    const long long total_delta = total_now - prev_total;
+    const long long idle_delta = idle_now - prev_idle;
+
+    if (total_delta <= 0)
+    {
+        usage_percent = 0.0;
+    }
+    else
+    {
+        usage_percent = 100.0 * static_cast<double>(total_delta - idle_delta) /
+                        static_cast<double>(total_delta);
+    }
+
+    last_user = user;
+    last_nice = nice;
+    last_system = system;
+    last_idle = idle;
+    last_iowait = iowait;
+    last_irq = irq;
+    last_softirq = softirq;
+    last_steal = steal;
+
+    return true;
+}
+
+
+
+}  // namespace
+
 
 namespace robot_monitor
 {
@@ -31,10 +190,11 @@ MainWindow::MainWindow(ros::NodeHandle& nh, QWidget* parent)
       ui_timer_(new QTimer(this)),
       central_widget_(nullptr),
       map_view_widget_(nullptr),
-      label_pose_(nullptr),
-      label_velocity_(nullptr),
-      label_battery_(nullptr),
-      label_system_(nullptr),
+    //   label_pose_(nullptr),
+    //   label_velocity_(nullptr),
+    //   label_battery_(nullptr),
+    //   label_system_(nullptr),
+      metrics_panel_widget_(nullptr), 
       log_text_edit_(nullptr),
       method_list_widget_(nullptr),
       trajectory_list_widget_(nullptr),
@@ -47,7 +207,11 @@ MainWindow::MainWindow(ros::NodeHandle& nh, QWidget* parent)
       metrics_dock_(nullptr),
       log_dock_(nullptr),
       playback_dock_(nullptr),
-      trajectory_dock_(nullptr)
+      trajectory_dock_(nullptr),
+      camera_thread_(nullptr),
+      camera_worker_(nullptr),
+      camera_view_widget_(nullptr),
+      camera_dock_(nullptr)
       
 {
     ros_interface_.init(nh_, "/robot/robotnik_base_control/odom");
@@ -105,6 +269,10 @@ MainWindow::MainWindow(ros::NodeHandle& nh, QWidget* parent)
     setupUi();
     refreshTrajectoryPanel();
 
+    // camera
+    nh_.param<std::string>("camera_topic", camera_topic_, "/robot/front_rgbd_camera/rgb/image_raw");
+    setupCameraThread();
+
     connect(ros_timer_, &QTimer::timeout, this, &MainWindow::onRosSpinOnce);
     connect(ui_timer_, &QTimer::timeout, this, &MainWindow::onUpdateUi);
 
@@ -114,6 +282,7 @@ MainWindow::MainWindow(ros::NodeHandle& nh, QWidget* parent)
 
 MainWindow::~MainWindow()
 {
+    stopCameraThread();
 }
 
 void MainWindow::episodeEventCallback(const std_msgs::String::ConstPtr& msg)
@@ -325,24 +494,12 @@ void MainWindow::setupDockWidgets()
     metrics_dock_ = new QDockWidget("Real-time Metrics", this);
     metrics_dock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     metrics_dock_->setFeatures(QDockWidget::DockWidgetClosable |
-                               QDockWidget::DockWidgetMovable |
-                               QDockWidget::DockWidgetFloatable);
+                            QDockWidget::DockWidgetMovable |
+                            QDockWidget::DockWidgetFloatable);
 
-    QWidget* metrics_widget = new QWidget(metrics_dock_);
-    QVBoxLayout* metrics_layout = new QVBoxLayout(metrics_widget);
+    metrics_panel_widget_ = new MetricsPanelWidget(metrics_dock_);
+    metrics_dock_->setWidget(metrics_panel_widget_);
 
-    label_pose_ = new QLabel("Pose: waiting for odom ...", metrics_widget);
-    label_velocity_ = new QLabel("Velocity: waiting for odom ...", metrics_widget);
-    label_battery_ = new QLabel("Battery: N/A", metrics_widget);
-    label_system_ = new QLabel("System: waiting for odom / episode event", metrics_widget);
-
-    metrics_layout->addWidget(label_pose_);
-    metrics_layout->addWidget(label_velocity_);
-    metrics_layout->addWidget(label_battery_);
-    metrics_layout->addWidget(label_system_);
-    metrics_layout->addStretch();
-
-    metrics_dock_->setWidget(metrics_widget);
     addDockWidget(Qt::RightDockWidgetArea, metrics_dock_);
 
     // =========================
@@ -403,12 +560,14 @@ void MainWindow::setupDockWidgets()
 
     method_list_widget_ = new QListWidget(trajectory_panel);
     method_list_widget_->setMinimumHeight(140);
+    method_list_widget_->setContextMenuPolicy(Qt::CustomContextMenu);
 
     QLabel* traj_title = new QLabel("Trajectories", trajectory_panel);
     traj_title->setStyleSheet("font-weight: bold; font-size: 14px;");
 
     trajectory_list_widget_ = new QListWidget(trajectory_panel);
     trajectory_list_widget_->setMinimumHeight(220);
+    trajectory_list_widget_->setContextMenuPolicy(Qt::CustomContextMenu);
 
     trajectory_panel_status_label_ = new QLabel("No trajectory data loaded.", trajectory_panel);
     trajectory_panel_status_label_->setWordWrap(true);
@@ -446,6 +605,33 @@ void MainWindow::setupDockWidgets()
     connect(button_load_trajectory_, &QPushButton::clicked, this, [this]() {
         loadSelectedTrajectoryMeta();
     });
+
+    connect(method_list_widget_, &QListWidget::customContextMenuRequested,
+        this, [this](const QPoint& pos) {
+            showMethodContextMenu(pos);
+        });
+
+    connect(trajectory_list_widget_, &QListWidget::customContextMenuRequested,
+            this, [this](const QPoint& pos) {
+                showTrajectoryContextMenu(pos);
+            });
+
+        // =========================
+    // Camera Feed
+    // =========================
+    camera_dock_ = new QDockWidget("Robot Camera", this);
+    camera_dock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    camera_dock_->setFeatures(QDockWidget::DockWidgetClosable |
+                              QDockWidget::DockWidgetMovable |
+                              QDockWidget::DockWidgetFloatable);
+
+    camera_view_widget_ = new CameraViewWidget(camera_dock_);
+    camera_dock_->setWidget(camera_view_widget_);
+
+    addDockWidget(Qt::RightDockWidgetArea, camera_dock_);
+
+    splitDockWidget(metrics_dock_, camera_dock_, Qt::Vertical);
+    //分割
 
     // =========================
     // View menu toggle actions
@@ -490,6 +676,12 @@ void MainWindow::setupDockWidgets()
             action->setText("Trajectory Records");
             view_menu_->addAction(action);
         }
+        if (camera_dock_)
+        {
+            QAction* action = camera_dock_->toggleViewAction();
+            action->setText("Robot Camera");
+            view_menu_->addAction(action);
+        }
     }
 }
 
@@ -510,13 +702,20 @@ void MainWindow::onUpdateUi()
 {
     const OdomData odom = ros_interface_.getOdomData();
 
-    map_view_widget_->setRobotPose(odom.x, odom.y, odom.yaw, odom.received);
+    if (map_view_widget_)
+    {
+        map_view_widget_->setRobotPose(odom.x, odom.y, odom.yaw, odom.received);
+    }
 
     if (!odom.received)
     {
-        label_pose_->setText("Pose: waiting for odom ...");
-        label_velocity_->setText("Velocity: waiting for odom ...");
-        label_system_->setText("System: no odom received");
+        if (metrics_panel_widget_)
+        {
+            metrics_panel_widget_->setPose(0.0, 0.0, 0.0);
+            metrics_panel_widget_->setSystemText("no odom received");
+            metrics_panel_widget_->setBatteryUnavailable();
+        }
+
         statusBar()->showMessage(QString("Waiting for %1 ...").arg(QString::fromStdString(odom_topic_)));
         return;
     }
@@ -534,33 +733,45 @@ void MainWindow::onUpdateUi()
         trajectory_recorder_.appendPoint(point);
     }
 
-    label_pose_->setText(
-        QString("Pose: x=%1, y=%2, yaw=%3 rad")
-            .arg(odom.x, 0, 'f', 3)
-            .arg(odom.y, 0, 'f', 3)
-            .arg(odom.yaw, 0, 'f', 3));
-
-    label_velocity_->setText(
-        QString("Velocity: v=%1 m/s, w=%2 rad/s")
-            .arg(odom.linear_velocity, 0, 'f', 3)
-            .arg(odom.angular_velocity, 0, 'f', 3));
-
-    if (trajectory_recorder_.isRecording())
+    if (metrics_panel_widget_)
     {
-        label_system_->setText(
-            QString("System: recording [%1]")
-                .arg(QString::fromStdString(trajectory_recorder_.currentTrajectoryName())));
-    }
-    else
-    {
-        label_system_->setText("System: odom online");
+        metrics_panel_widget_->setPose(odom.x, odom.y, odom.yaw);
+        metrics_panel_widget_->addVelocitySamples(odom.linear_velocity, odom.angular_velocity);
+
+        if (trajectory_recorder_.isRecording())
+        {
+            metrics_panel_widget_->setSystemText(
+                QString("recording [%1]")
+                    .arg(QString::fromStdString(trajectory_recorder_.currentTrajectoryName())));
+        }
+        else
+        {
+            metrics_panel_widget_->setSystemText("odom online");
+        }
+
+        double system_cpu = 0.0;
+        if (ReadCpuUsagePercent(system_cpu))
+        {
+            metrics_panel_widget_->setSystemCpuUsage(system_cpu);
+        }
+
+        double app_cpu = 0.0;
+        if (ReadProcessCpuUsagePercent(app_cpu))
+        {
+            metrics_panel_widget_->setAppCpuUsage(app_cpu);
+        }
+
+        metrics_panel_widget_->setBatteryUnavailable();
     }
 
     statusBar()->showMessage("ROS running: odom connected");
 
     if (!odom_logged_)
     {
-        log_text_edit_->append("[INFO] First odom message received.");
+        if (log_text_edit_)
+        {
+            log_text_edit_->append("[INFO] First odom message received.");
+        }
         odom_logged_ = true;
     }
 }
@@ -758,6 +969,238 @@ void MainWindow::loadSelectedTrajectoryMeta()
             QString("[INFO] Loaded trajectory: %1, points=%2")
                 .arg(QString::fromStdString(record.name))
                 .arg(static_cast<int>(record.points.size())));
+    }
+}
+
+void MainWindow::showMethodContextMenu(const QPoint& pos)
+{
+    if (!method_list_widget_)
+    {
+        return;
+    }
+
+    QListWidgetItem* item = method_list_widget_->itemAt(pos);
+    if (!item)
+    {
+        return;
+    }
+
+    method_list_widget_->setCurrentItem(item);
+
+    QMenu menu(this);
+    QAction* delete_action = menu.addAction("删除该方法全部轨迹");
+
+    QAction* selected_action = menu.exec(method_list_widget_->viewport()->mapToGlobal(pos));
+    if (selected_action == delete_action)
+    {
+        deleteSelectedMethod();
+    }
+}
+
+void MainWindow::showTrajectoryContextMenu(const QPoint& pos)
+{
+    if (!trajectory_list_widget_)
+    {
+        return;
+    }
+
+    QListWidgetItem* item = trajectory_list_widget_->itemAt(pos);
+    if (!item)
+    {
+        return;
+    }
+
+    trajectory_list_widget_->setCurrentItem(item);
+
+    QMenu menu(this);
+    QAction* show_action = menu.addAction("显示该轨迹");
+    QAction* delete_action = menu.addAction("删除该轨迹");
+
+    QAction* selected_action = menu.exec(trajectory_list_widget_->viewport()->mapToGlobal(pos));
+
+    if (selected_action == show_action)
+    {
+        loadSelectedTrajectoryMeta();
+    }
+    else if (selected_action == delete_action)
+    {
+        deleteSelectedTrajectory();
+    }
+}
+
+void MainWindow::deleteSelectedMethod()
+{
+    if (!method_list_widget_)
+    {
+        return;
+    }
+
+    QListWidgetItem* item = method_list_widget_->currentItem();
+    if (!item)
+    {
+        return;
+    }
+
+    const QString method_name = item->text();
+
+    const QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        "删除方法",
+        QString("确定删除方法【%1】下的所有轨迹吗？\n该操作不可恢复。").arg(method_name),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+
+    if (reply != QMessageBox::Yes)
+    {
+        return;
+    }
+
+    std::string error_message;
+    if (!trajectory_storage_.deleteTrajectoriesByMethod(method_name.toStdString(), error_message))
+    {
+        QMessageBox::warning(
+            this,
+            "删除失败",
+            QString("删除方法失败：%1").arg(QString::fromStdString(error_message)));
+
+        if (log_text_edit_)
+        {
+            log_text_edit_->append(
+                QString("[WARN] Failed to delete method [%1]: %2")
+                    .arg(method_name)
+                    .arg(QString::fromStdString(error_message)));
+        }
+        return;
+    }
+
+    if (map_view_widget_)
+    {
+        map_view_widget_->clearSelectedTrajectory();
+    }
+
+    refreshTrajectoryPanel();
+
+    if (log_text_edit_)
+    {
+        log_text_edit_->append(
+            QString("[INFO] Deleted all trajectories under method [%1].")
+                .arg(method_name));
+    }
+}
+
+
+void MainWindow::deleteSelectedTrajectory()
+{
+    if (!trajectory_list_widget_)
+    {
+        return;
+    }
+
+    QListWidgetItem* item = trajectory_list_widget_->currentItem();
+    if (!item)
+    {
+        return;
+    }
+
+    const int trajectory_id = item->data(Qt::UserRole).toInt();
+    const QString trajectory_name = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+
+    const QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        "删除轨迹",
+        QString("确定删除轨迹【%1】吗？\n该操作不可恢复。").arg(trajectory_name),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+
+    if (reply != QMessageBox::Yes)
+    {
+        return;
+    }
+
+    std::string error_message;
+    if (!trajectory_storage_.deleteTrajectoryById(trajectory_id, error_message))
+    {
+        QMessageBox::warning(
+            this,
+            "删除失败",
+            QString("删除轨迹失败：%1").arg(QString::fromStdString(error_message)));
+
+        if (log_text_edit_)
+        {
+            log_text_edit_->append(
+                QString("[WARN] Failed to delete trajectory [%1]: %2")
+                    .arg(trajectory_name)
+                    .arg(QString::fromStdString(error_message)));
+        }
+        return;
+    }
+
+    if (map_view_widget_)
+    {
+        map_view_widget_->clearSelectedTrajectory();
+    }
+
+    refreshTrajectoryPanel();
+
+    if (log_text_edit_)
+    {
+        log_text_edit_->append(
+            QString("[INFO] Deleted trajectory [%1] (id=%2).")
+                .arg(trajectory_name)
+                .arg(trajectory_id));
+    }
+}
+
+// camera
+
+void MainWindow::setupCameraThread()
+{
+    camera_thread_ = new QThread(this);
+    camera_worker_ = new CameraWorker();
+
+    camera_worker_->configure(camera_topic_);
+    camera_worker_->moveToThread(camera_thread_);
+
+    connect(camera_thread_, &QThread::started,
+            camera_worker_, &CameraWorker::start);
+
+    connect(camera_worker_, &CameraWorker::imageReady,
+            camera_view_widget_, &CameraViewWidget::setImage,
+            Qt::QueuedConnection);
+
+    connect(camera_worker_, &CameraWorker::cameraStatusChanged,
+            camera_view_widget_, &CameraViewWidget::setStatus,
+            Qt::QueuedConnection);
+
+    connect(camera_worker_, &CameraWorker::rosLogMessage,
+            this, [this](const QString& msg) {
+                if (log_text_edit_)
+                {
+                    log_text_edit_->append(msg);
+                }
+            },
+            Qt::QueuedConnection);
+
+    connect(camera_thread_, &QThread::finished,
+            camera_worker_, &QObject::deleteLater);
+
+    camera_thread_->start();
+}
+
+
+void MainWindow::stopCameraThread()
+{
+    if (camera_worker_ != nullptr)
+    {
+        QMetaObject::invokeMethod(camera_worker_, "stop", Qt::BlockingQueuedConnection);
+    }
+
+    if (camera_thread_ != nullptr)
+    {
+        camera_thread_->quit();
+        camera_thread_->wait();
+        camera_thread_ = nullptr;
+        camera_worker_ = nullptr;
     }
 }
 

@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QTimer>
+#include <QPoint>
 
 #include <ros/subscriber.h>
 #include <std_msgs/String.h>
@@ -12,6 +13,11 @@
 #include "robot_monitor/trajectory_recorder.h"
 #include "robot_monitor/experiment_config.h"
 #include "robot_monitor/trajectory_storage.h"
+
+#include <QThread>
+#include "robot_monitor/camera_view_widget.h"
+#include "robot_monitor/camera_worker.h"
+#include "robot_monitor/metrics_panel_widget.h"
 
 class QLabel;
 class QTextEdit;
@@ -52,6 +58,12 @@ private:
     void refreshTrajectoryPanel();
     void updateTrajectoryListForSelectedMethod(int preferred_trajectory_id = -1);
     void loadSelectedTrajectoryMeta();
+    void setupCameraThread();
+    void stopCameraThread();    
+    void showMethodContextMenu(const QPoint& pos);
+    void showTrajectoryContextMenu(const QPoint& pos);
+    void deleteSelectedMethod();
+    void deleteSelectedTrajectory();
 
 private:
     ros::NodeHandle nh_;
@@ -76,10 +88,11 @@ private:
     QWidget* central_widget_;
     MapViewWidget* map_view_widget_;
 
-    QLabel* label_pose_;
-    QLabel* label_velocity_;
-    QLabel* label_battery_;
-    QLabel* label_system_;
+    // QLabel* label_pose_;
+    // QLabel* label_velocity_;
+    // QLabel* label_battery_;
+    // QLabel* label_system_;
+    MetricsPanelWidget* metrics_panel_widget_;
 
     QTextEdit* log_text_edit_;
 
@@ -100,6 +113,13 @@ private:
     QDockWidget* log_dock_;
     QDockWidget* playback_dock_;
     QDockWidget* trajectory_dock_;
+
+    std::string camera_topic_;
+
+    QThread* camera_thread_;
+    CameraWorker* camera_worker_;
+    CameraViewWidget* camera_view_widget_;
+    QDockWidget* camera_dock_;
 };
 
 }  // namespace robot_monitor

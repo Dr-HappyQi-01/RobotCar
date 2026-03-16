@@ -11,10 +11,14 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   sensor_msgs
   tf
+  image_transport
+  cv_bridge   
 )
 
 find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
 find_package(PkgConfig REQUIRED)
+find_package(TIFF REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
@@ -30,6 +34,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${JSONCPP_INCLUDE_DIRS}
   ${SQLITE3_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 set(HEADERS
@@ -40,6 +45,12 @@ set(HEADERS
   include/robot_monitor/experiment_config.h
   include/robot_monitor/trajectory_recorder.h
   include/robot_monitor/trajectory_storage.h
+  include/robot_monitor/camera_view_widget.h
+  include/robot_monitor/camera_worker.h
+  include/robot_monitor/sparkline_widget.h
+  include/robot_monitor/progress_pill_widget.h
+  include/robot_monitor/metrics_panel_widget.h
+  include/robot_monitor/pose_metric_card_widget.h
 )
 
 set(SOURCES
@@ -50,6 +61,12 @@ set(SOURCES
   src/experiment_config.cpp
   src/trajectory_recorder.cpp
   src/trajectory_storage.cpp
+  src/camera_view_widget.cpp
+  src/camera_worker.cpp
+  src/sparkline_widget.cpp
+  src/progress_pill_widget.cpp
+  src/metrics_panel_widget.cpp
+  src/pose_metric_card_widget.cpp
 )
 
 add_executable(${PROJECT_NAME}
@@ -61,6 +78,8 @@ target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${JSONCPP_LIBRARIES}
   ${SQLITE3_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${TIFF_LIBRARIES}
   Qt5::Widgets
   Qt5::Core
   Qt5::Gui

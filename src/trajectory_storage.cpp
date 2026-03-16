@@ -375,4 +375,145 @@ bool TrajectoryStorage::loadTrajectoryById(int trajectory_id,
     return true;
 }
 
+bool TrajectoryStorage::deleteTrajectoryById(int trajectory_id, std::string& error_message)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (db_ == nullptr)
+    {
+        error_message = "Database is not open";
+        return false;
+    }
+
+    if (!executeSql("BEGIN TRANSACTION;", error_message))
+    {
+        return false;
+    }
+
+    sqlite3_stmt* points_stmt = nullptr;
+    const char* delete_points_sql =
+        "DELETE FROM trajectory_points WHERE trajectory_id = ?;";
+
+    if (sqlite3_prepare_v2(db_, delete_points_sql, -1, &points_stmt, nullptr) != SQLITE_OK)
+    {
+        error_message = sqlite3_errmsg(db_);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_bind_int(points_stmt, 1, trajectory_id);
+
+    if (sqlite3_step(points_stmt) != SQLITE_DONE)
+    {
+        error_message = sqlite3_errmsg(db_);
+        sqlite3_finalize(points_stmt);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_finalize(points_stmt);
+
+    sqlite3_stmt* traj_stmt = nullptr;
+    const char* delete_traj_sql =
+        "DELETE FROM trajectories WHERE id = ?;";
+
+    if (sqlite3_prepare_v2(db_, delete_traj_sql, -1, &traj_stmt, nullptr) != SQLITE_OK)
+    {
+        error_message = sqlite3_errmsg(db_);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_bind_int(traj_stmt, 1, trajectory_id);
+
+    if (sqlite3_step(traj_stmt) != SQLITE_DONE)
+    {
+        error_message = sqlite3_errmsg(db_);
+        sqlite3_finalize(traj_stmt);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_finalize(traj_stmt);
+
+    if (!executeSql("COMMIT;", error_message))
+    {
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    return true;
+}
+
+bool TrajectoryStorage::deleteTrajectoriesByMethod(const std::string& method_name, std::string& error_message)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (db_ == nullptr)
+    {
+        error_message = "Database is not open";
+        return false;
+    }
+
+    if (!executeSql("BEGIN TRANSACTION;", error_message))
+    {
+        return false;
+    }
+
+    sqlite3_stmt* points_stmt = nullptr;
+    const char* delete_points_sql =
+        "DELETE FROM trajectory_points "
+        "WHERE trajectory_id IN (SELECT id FROM trajectories WHERE method_name = ?);";
+
+    if (sqlite3_prepare_v2(db_, delete_points_sql, -1, &points_stmt, nullptr) != SQLITE_OK)
+    {
+        error_message = sqlite3_errmsg(db_);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_bind_text(points_stmt, 1, method_name.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(points_stmt) != SQLITE_DONE)
+    {
+        error_message = sqlite3_errmsg(db_);
+        sqlite3_finalize(points_stmt);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_finalize(points_stmt);
+
+    sqlite3_stmt* traj_stmt = nullptr;
+    const char* delete_traj_sql =
+        "DELETE FROM trajectories WHERE method_name = ?;";
+
+    if (sqlite3_prepare_v2(db_, delete_traj_sql, -1, &traj_stmt, nullptr) != SQLITE_OK)
+    {
+        error_message = sqlite3_errmsg(db_);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_bind_text(traj_stmt, 1, method_name.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(traj_stmt) != SQLITE_DONE)
+    {
+        error_message = sqlite3_errmsg(db_);
+        sqlite3_finalize(traj_stmt);
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    sqlite3_finalize(traj_stmt);
+
+    if (!executeSql("COMMIT;", error_message))
+    {
+        executeSql("ROLLBACK;", error_message);
+        return false;
+    }
+
+    return true;
+}
+
 }  // namespace robot_monitor

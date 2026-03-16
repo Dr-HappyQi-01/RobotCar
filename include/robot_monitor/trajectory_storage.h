@@ -31,6 +31,9 @@ public:
     
     bool loadTrajectoryById(int trajectory_id, TrajectoryRecord& record, std::string& error_message);
 
+    bool deleteTrajectoryById(int trajectory_id, std::string& error_message);
+    bool deleteTrajectoriesByMethod(const std::string& method_name, std::string& error_message);
+
 private:
     bool executeSql(const std::string& sql, std::string& error_message);
 
