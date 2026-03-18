@@ -5,6 +5,8 @@
 #include <QPointF>
 #include <QWidget>
 #include <vector>
+#include <QImage>
+#include "robot_monitor/map_types.h"
 
 #include "robot_monitor/trajectory_types.h"
 
@@ -23,6 +25,9 @@ public:
     void clearTrajectory();
     void setSelectedTrajectory(const TrajectoryRecord& record);
     void clearSelectedTrajectory();
+    void setMapData(const GridMapData& map_data);
+    void clearMapData();
+    
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -43,12 +48,18 @@ private:
 
     QPointF worldToScreen(double wx, double wy) const;
     void appendTrajectoryPoint(double x, double y);
+    void drawMap(QPainter& painter);
+    void rebuildMapImage();
+
+
 
 private:
     double robot_x_;
     double robot_y_;
     double robot_yaw_;
     bool pose_valid_;
+
+
 
     double pixels_per_meter_;
     double view_scale_;
@@ -62,6 +73,10 @@ private:
 
     TrajectoryRecord selected_trajectory_record_;
     bool has_selected_trajectory_;
+
+    GridMapData map_data_;
+    QImage map_image_;
+    bool has_map_;
 };
 
 }  // namespace robot_monitor

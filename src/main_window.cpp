@@ -247,6 +247,35 @@ MainWindow::MainWindow(ros::NodeHandle& nh, QWidget* parent)
         experiment_config_.method_name = "未命名方法";
     }
 
+AppConfigLoader app_config_loader;
+std::string app_error_message;
+const std::string app_config_path = "/home/s/catkin_ws/src/robot_monitor/config/app_config.json";
+
+if (app_config_loader.loadFromFile(app_config_path, app_config_, app_error_message))
+{
+    ROS_INFO_STREAM("Loaded app config successfully.");
+    ROS_INFO_STREAM("odom_topic = " << app_config_.odom_topic);
+    ROS_INFO_STREAM("map_topic = " << app_config_.map_topic);
+    ROS_INFO_STREAM("camera_topic = " << app_config_.camera_topic);
+    ROS_INFO_STREAM("episode_event_topic = " << app_config_.episode_event_topic);
+}
+else
+{
+    ROS_WARN_STREAM("Failed to load app config: " << app_error_message);
+
+    // fallback defaults
+    app_config_.odom_topic = "/robot/robotnik_base_control/odom";
+    app_config_.map_topic = "/robot/map";
+    app_config_.camera_topic = "/robot/front_rgbd_camera/rgb/image_raw";
+    app_config_.episode_event_topic = "/experiment/episode_event";
+
+    app_config_.slam_start_command = "";
+    app_config_.slam_save_map_command = "";
+    app_config_.slam_stop_command = "";
+
+    app_config_.default_map_dir = "/home/s/maps";
+}
+
     database_path_ = "/home/s/catkin_ws/src/robot_monitor/data/trajectory.db";
 
     std::string db_error;
@@ -701,9 +730,15 @@ void MainWindow::onRosSpinOnce()
 void MainWindow::onUpdateUi()
 {
     const OdomData odom = ros_interface_.getOdomData();
+    const GridMapData map_data = ros_interface_.getMapData();
 
     if (map_view_widget_)
     {
+        if (map_data.valid)
+        {
+            map_view_widget_->setMapData(map_data);
+        }
+
         map_view_widget_->setRobotPose(odom.x, odom.y, odom.yaw, odom.received);
     }
 
@@ -764,7 +799,14 @@ void MainWindow::onUpdateUi()
         metrics_panel_widget_->setBatteryUnavailable();
     }
 
-    statusBar()->showMessage("ROS running: odom connected");
+    if (map_data.valid)
+    {
+        statusBar()->showMessage("ROS running: odom connected, map online");
+    }
+    else
+    {
+        statusBar()->showMessage("ROS running: odom connected, waiting for map");
+    }
 
     if (!odom_logged_)
     {

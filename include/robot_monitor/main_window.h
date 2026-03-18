@@ -13,6 +13,7 @@
 #include "robot_monitor/trajectory_recorder.h"
 #include "robot_monitor/experiment_config.h"
 #include "robot_monitor/trajectory_storage.h"
+#include "robot_monitor/app_config.h"
 
 #include <QThread>
 #include "robot_monitor/camera_view_widget.h"
@@ -74,6 +75,7 @@ private:
     std::string episode_event_topic_;
 
     ExperimentConfig experiment_config_;
+    AppConfig app_config_;
     TrajectoryRecorder trajectory_recorder_;
     TrajectoryStorage trajectory_storage_;
     std::string database_path_;

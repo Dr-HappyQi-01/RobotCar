@@ -51,6 +51,8 @@ set(HEADERS
   include/robot_monitor/progress_pill_widget.h
   include/robot_monitor/metrics_panel_widget.h
   include/robot_monitor/pose_metric_card_widget.h
+  include/robot_monitor/map_types.h
+  include/robot_monitor/app_config.h
 )
 
 set(SOURCES
@@ -67,6 +69,7 @@ set(SOURCES
   src/progress_pill_widget.cpp
   src/metrics_panel_widget.cpp
   src/pose_metric_card_widget.cpp
+  src/app_config.cpp
 )
 
 add_executable(${PROJECT_NAME}

@@ -22,7 +22,9 @@ MapViewWidget::MapViewWidget(QWidget* parent)
       min_point_distance_(0.02),
       is_panning_(false),
       last_mouse_pos_(0, 0),
-      has_selected_trajectory_(false)
+      has_selected_trajectory_(false),
+      has_map_(false)
+      
 {
     setMinimumSize(800, 500);
     setAutoFillBackground(true);
@@ -84,6 +86,7 @@ void MapViewWidget::paintEvent(QPaintEvent* event)
     painter.setRenderHint(QPainter::Antialiasing, true);
 
     drawBackground(painter);
+    drawMap(painter);
     drawGrid(painter);
     drawAxes(painter);
     drawTrajectory(painter);
@@ -409,6 +412,92 @@ void MapViewWidget::drawStartEndMarkers(QPainter& painter, const std::vector<QPo
     painter.drawEllipse(end_screen, 7.0, 7.0);
     painter.setPen(Qt::white);
     painter.drawText(end_screen + QPointF(10.0, -10.0), "E");
+
+    painter.restore();
+}
+
+//Slam MAP
+
+void MapViewWidget::setMapData(const GridMapData& map_data)
+{
+    map_data_ = map_data;
+    has_map_ = map_data_.valid;
+    rebuildMapImage();
+    update();
+}
+
+void MapViewWidget::clearMapData()
+{
+    map_data_ = GridMapData();
+    map_image_ = QImage();
+    has_map_ = false;
+    update();
+}
+
+void MapViewWidget::rebuildMapImage()
+{
+    if (!map_data_.valid || map_data_.width <= 0 || map_data_.height <= 0)
+    {
+        map_image_ = QImage();
+        has_map_ = false;
+        return;
+    }
+
+    QImage image(map_data_.width, map_data_.height, QImage::Format_RGB888);
+
+    for (int y = 0; y < map_data_.height; ++y)
+    {
+        for (int x = 0; x < map_data_.width; ++x)
+        {
+            const int idx = y * map_data_.width + x;
+            const int8_t value = map_data_.data[idx];
+
+            QColor color;
+            if (value < 0)
+            {
+                color = QColor(70, 75, 85);   // unknown
+            }
+            else if (value == 0)
+            {
+                color = QColor(245, 245, 245); // free
+            }
+            else
+            {
+                const int gray = 255 - static_cast<int>(value * 255.0 / 100.0);
+                color = QColor(gray, gray, gray); // occupied gradient
+            }
+
+            // 翻转 y，避免显示上下颠倒
+            image.setPixelColor(x, map_data_.height - 1 - y, color);
+        }
+    }
+
+    map_image_ = image;
+    has_map_ = true;
+}
+
+void MapViewWidget::drawMap(QPainter& painter)
+{
+    if (!has_map_ || map_image_.isNull() || !map_data_.valid)
+    {
+        return;
+    }
+
+    painter.save();
+
+    const double scale = map_data_.resolution * pixels_per_meter_ * view_scale_;
+
+    const double world_left = map_data_.origin_x;
+    const double world_top = map_data_.origin_y + map_data_.height * map_data_.resolution;
+
+    const QPointF top_left = worldToScreen(world_left, world_top);
+
+    const double draw_width = map_data_.width * scale;
+    const double draw_height = map_data_.height * scale;
+
+    QRectF target(top_left.x(), top_left.y(), draw_width, draw_height);
+
+    painter.drawImage(target, map_image_);
 
     painter.restore();
 }

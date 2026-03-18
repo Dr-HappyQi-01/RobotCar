@@ -38,7 +38,7 @@ void PoseMetricCardWidget::paintEvent(QPaintEvent* event)
 
     p.setPen(Qt::NoPen);
     p.setBrush(QColor(30, 36, 48));
-    p.drawRoundedRect(outer, 16, 16);
+    p.drawRoundedRect(outer, 16, 16); 
 
     p.setPen(QPen(QColor(55, 65, 82), 1));
     p.setBrush(Qt::NoBrush);

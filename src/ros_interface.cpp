@@ -1,4 +1,5 @@
 #include "robot_monitor/ros_interface.h"
+#include "robot_monitor/map_types.h"
 
 #include <tf/tf.h>
 
@@ -16,7 +17,29 @@ RosInterface::~RosInterface()
 bool RosInterface::init(ros::NodeHandle& nh, const std::string& odom_topic)
 {
     odom_sub_ = nh.subscribe(odom_topic, 10, &RosInterface::odomCallback, this);
+    map_sub_ = nh.subscribe("/map", 1, &RosInterface::mapCallback, this);
     return true;
+}
+
+GridMapData RosInterface::getMapData() const
+{
+    std::lock_guard<std::mutex> lock(map_mutex_);
+    return map_data_;
+}
+
+void RosInterface::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg)
+{
+    std::lock_guard<std::mutex> lock(map_mutex_);
+
+    map_data_.width = static_cast<int>(msg->info.width);
+    map_data_.height = static_cast<int>(msg->info.height);
+    map_data_.resolution = msg->info.resolution;
+    map_data_.origin_x = msg->info.origin.position.x;
+    map_data_.origin_y = msg->info.origin.position.y;
+    map_data_.data = msg->data;
+    map_data_.valid = (!map_data_.data.empty() &&
+                       map_data_.width > 0 &&
+                       map_data_.height > 0);
 }
 
 OdomData RosInterface::getOdomData() const
