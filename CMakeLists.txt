@@ -19,6 +19,7 @@ find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
 find_package(PkgConfig REQUIRED)
 find_package(TIFF REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core imgproc)
+find_package(yaml-cpp REQUIRED)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
 pkg_check_modules(SQLITE3 REQUIRED sqlite3)
 
@@ -53,6 +54,8 @@ set(HEADERS
   include/robot_monitor/pose_metric_card_widget.h
   include/robot_monitor/map_types.h
   include/robot_monitor/app_config.h
+  include/robot_monitor/map_file_loader.h
+  include/robot_monitor/reward_curve_widget.h
 )
 
 set(SOURCES
@@ -70,6 +73,8 @@ set(SOURCES
   src/metrics_panel_widget.cpp
   src/pose_metric_card_widget.cpp
   src/app_config.cpp
+  src/map_file_loader.cpp
+  src/reward_curve_widget.cpp
 )
 
 add_executable(${PROJECT_NAME}
@@ -83,6 +88,7 @@ target_link_libraries(${PROJECT_NAME}
   ${SQLITE3_LIBRARIES}
   ${OpenCV_LIBRARIES}
   ${TIFF_LIBRARIES}
+  yaml-cpp
   Qt5::Widgets
   Qt5::Core
   Qt5::Gui
@@ -92,4 +98,4 @@ target_link_libraries(${PROJECT_NAME}
 
 add_executable(draw_circle src/TestDemo.cpp)
 
-target_link_libraries(draw_circle ${catkin_LIBRARIES})
+target_link_libraries(draw_circle ${catkin_LIBRARIES} ${SQLITE3_LIBRARIES})

@@ -4,9 +4,12 @@
 #include <QMainWindow>
 #include <QTimer>
 #include <QPoint>
-
+#include <QComboBox>
+#include <QPushButton>
+#include <QVBoxLayout>
 #include <ros/subscriber.h>
 #include <std_msgs/String.h>
+#include <QProcess>
 
 #include "robot_monitor/ros_interface.h"
 #include "robot_monitor/map_view_widget.h"
@@ -19,12 +22,14 @@
 #include "robot_monitor/camera_view_widget.h"
 #include "robot_monitor/camera_worker.h"
 #include "robot_monitor/metrics_panel_widget.h"
+#include "robot_monitor/map_file_loader.h"
+#include "robot_monitor/reward_curve_widget.h"
+
 
 class QLabel;
 class QTextEdit;
 class QListWidget;
 class QListWidgetItem;
-class QPushButton;
 class QMenu;
 class QToolBar;
 class QDockWidget;
@@ -45,8 +50,22 @@ private slots:
     void onUpdateUi();
     void onMethodSelectionChanged();
     void onTrajectorySelectionChanged();
+    void onMapModeChanged(int index);
+    void onStartSlamClicked();
+    void onFinishSlamClicked();
+    void onImportMapClicked();
+    void onClearMapClicked();
+    void onSlamProcessStarted();
+    void onSlamProcessFinished(int exit_code, QProcess::ExitStatus exit_status);
+    void onSlamProcessErrorOccurred(QProcess::ProcessError error);
 
 private:
+    enum  MapMode
+{
+    LiveSlam = 0,
+    ImportMap = 1,
+    RawGrid = 2
+};
     void setupUi();
     void setupMenuBar();
     void setupToolBar();
@@ -65,6 +84,18 @@ private:
     void showTrajectoryContextMenu(const QPoint& pos);
     void deleteSelectedMethod();
     void deleteSelectedTrajectory();
+    void setupMapControlBar(QVBoxLayout* parent_layout);
+    void updateMapModeUi();
+    void setMapMode(MapMode mode);
+    void startSlamProcess();
+    void runSaveMapProcess();
+    void stopSlamProcess();
+    void appendProcessOutput(QProcess* process, const QString& prefix);
+    bool promptOverlayCornerCoordinates(ImageOverlayData& overlay_data);
+    void appendLogMessage(const QString& level, const QString& message);
+    void appendAutoLogMessage(const QString& text);
+
+
 
 private:
     ros::NodeHandle nh_;
@@ -113,7 +144,8 @@ private:
 
     QDockWidget* metrics_dock_;
     QDockWidget* log_dock_;
-    QDockWidget* playback_dock_;
+    QDockWidget* reward_dock_;
+    RewardCurveWidget* reward_curve_widget_;
     QDockWidget* trajectory_dock_;
 
     std::string camera_topic_;
@@ -122,6 +154,28 @@ private:
     CameraWorker* camera_worker_;
     CameraViewWidget* camera_view_widget_;
     QDockWidget* camera_dock_;
+
+
+    MapMode current_map_mode_;
+    bool slam_running_;
+
+    QWidget* map_control_bar_widget_;
+    QComboBox* combo_map_mode_;
+    QPushButton* button_start_slam_;
+    QPushButton* button_finish_slam_;
+    QPushButton* button_import_map_;
+    QPushButton* button_clear_map_;
+
+    QProcess* slam_process_;
+    QProcess* save_map_process_;
+    QProcess* stop_slam_process_;
+
+
+    MapFileLoader map_file_loader_;
+    GridMapData imported_map_data_;
+    bool imported_map_valid_;
+    ImageOverlayData imported_overlay_data_;
+    bool imported_overlay_valid_;
 };
 
 }  // namespace robot_monitor

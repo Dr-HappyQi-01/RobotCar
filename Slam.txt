@@ -7,3 +7,8 @@ roslaunch turtlebot3_slam turtlebot3_slam.launch slam_methods:=gmapping
 
 export TURTLEBOT3_MODEL=burger
 roslaunch turtlebot3_teleop turtlebot3_teleop_key.launch
+
+roslaunch summit_xl_sim_bringup summit_xl_complete.launch
+
+rosrun robot_monitor draw_circle 
+

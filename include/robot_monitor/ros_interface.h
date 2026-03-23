@@ -28,7 +28,10 @@ public:
     RosInterface();
     ~RosInterface();
 
-    bool init(ros::NodeHandle& nh, const std::string& odom_topic = "/odom");
+    // bool init(ros::NodeHandle& nh, const std::string& odom_topic = "/odom");
+    bool init(ros::NodeHandle& nh,
+          const std::string& odom_topic = "/odom",
+          const std::string& map_topic = "/map");
     OdomData getOdomData() const;
     GridMapData getMapData() const;
 

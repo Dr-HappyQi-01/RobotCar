@@ -1,6 +1,7 @@
 #include "robot_monitor/trajectory_storage.h"
 
 #include <sqlite3.h>
+#include <iostream>
 
 namespace robot_monitor
 {
@@ -70,36 +71,15 @@ bool TrajectoryStorage::executeSql(const std::string& sql, std::string& error_me
 
 bool TrajectoryStorage::initTables(std::string& error_message)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    if (db_ == nullptr)
-    {
-        error_message = "Database is not open";
-        return false;
-    }
-
     const std::string create_trajectories_sql =
         "CREATE TABLE IF NOT EXISTS trajectories ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "name TEXT NOT NULL,"
-        "method_name TEXT NOT NULL,"
-        "episode_index INTEGER NOT NULL,"
-        "start_time REAL,"
-        "end_time REAL,"
-        "point_count INTEGER"
-        ");";
-
-    const std::string create_points_sql =
-        "CREATE TABLE IF NOT EXISTS trajectory_points ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "trajectory_id INTEGER NOT NULL,"
-        "seq INTEGER NOT NULL,"
-        "x REAL NOT NULL,"
-        "y REAL NOT NULL,"
-        "yaw REAL NOT NULL,"
-        "linear_velocity REAL,"
-        "angular_velocity REAL,"
-        "timestamp REAL"
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "name TEXT NOT NULL, "
+        "method_name TEXT NOT NULL, "
+        "episode_index INTEGER NOT NULL, "
+        "start_time REAL DEFAULT 0, "
+        "end_time REAL DEFAULT 0, "
+        "point_count INTEGER DEFAULT 0"
         ");";
 
     if (!executeSql(create_trajectories_sql, error_message))
@@ -107,7 +87,43 @@ bool TrajectoryStorage::initTables(std::string& error_message)
         return false;
     }
 
+    const std::string create_points_sql =
+        "CREATE TABLE IF NOT EXISTS trajectory_points ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "trajectory_id INTEGER NOT NULL, "
+        "seq INTEGER NOT NULL, "
+        "x REAL NOT NULL, "
+        "y REAL NOT NULL, "
+        "yaw REAL NOT NULL, "
+        "linear_velocity REAL DEFAULT 0, "
+        "angular_velocity REAL DEFAULT 0, "
+        "timestamp REAL DEFAULT 0"
+        ");";
+
     if (!executeSql(create_points_sql, error_message))
+    {
+        return false;
+    }
+
+    const std::string create_rewards_sql =
+        "CREATE TABLE IF NOT EXISTS method_episode_rewards ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "method_name TEXT NOT NULL, "
+        "episode INTEGER NOT NULL, "
+        "reward REAL NOT NULL, "
+        "timestamp REAL DEFAULT 0"
+        ");";
+
+    if (!executeSql(create_rewards_sql, error_message))
+    {
+        return false;
+    }
+
+    const std::string create_rewards_index_sql =
+        "CREATE INDEX IF NOT EXISTS idx_method_episode_rewards_method_episode "
+        "ON method_episode_rewards(method_name, episode);";
+
+    if (!executeSql(create_rewards_index_sql, error_message))
     {
         return false;
     }
@@ -513,6 +529,89 @@ bool TrajectoryStorage::deleteTrajectoriesByMethod(const std::string& method_nam
         return false;
     }
 
+    return true;
+}
+
+bool TrajectoryStorage::insertEpisodeReward(const std::string& method_name,
+                                            int episode,
+                                            double reward,
+                                            double timestamp,
+                                            std::string& error_message)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (db_ == nullptr)
+    {
+        error_message = "Database is not open";
+        return false;
+    }
+
+    const char* sql =
+        "INSERT INTO method_episode_rewards (method_name, episode, reward, timestamp) "
+        "VALUES (?, ?, ?, ?);";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        error_message = sqlite3_errmsg(db_);
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, method_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, episode);
+    sqlite3_bind_double(stmt, 3, reward);
+    sqlite3_bind_double(stmt, 4, timestamp);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE)
+    {
+        error_message = sqlite3_errmsg(db_);
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
+    sqlite3_finalize(stmt);
+    return true;
+}
+
+bool TrajectoryStorage::loadEpisodeRewardsByMethod(const std::string& method_name,
+                                                   std::vector<EpisodeRewardPoint>& rewards,
+                                                   std::string& error_message)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    rewards.clear();
+
+    if (db_ == nullptr)
+    {
+        error_message = "Database is not open";
+        return false;
+    }
+
+    const char* sql =
+        "SELECT episode, reward, timestamp "
+        "FROM method_episode_rewards "
+        "WHERE method_name = ? "
+        "ORDER BY episode ASC;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        error_message = sqlite3_errmsg(db_);
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, method_name.c_str(), -1, SQLITE_TRANSIENT);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        EpisodeRewardPoint pt;
+        pt.episode = sqlite3_column_int(stmt, 0);
+        pt.reward = sqlite3_column_double(stmt, 1);
+        pt.timestamp = sqlite3_column_double(stmt, 2);
+        rewards.push_back(pt);
+    }
+
+    sqlite3_finalize(stmt);
     return true;
 }
 

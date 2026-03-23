@@ -24,6 +24,7 @@ public:
     std::string currentTrajectoryName() const;
     TrajectoryRecord currentRecord() const;
 
+
     void reset();
 
 private:

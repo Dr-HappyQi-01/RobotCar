@@ -23,7 +23,8 @@ MapViewWidget::MapViewWidget(QWidget* parent)
       is_panning_(false),
       last_mouse_pos_(0, 0),
       has_selected_trajectory_(false),
-      has_map_(false)
+      has_map_(false),
+      has_image_overlay_(false)
       
 {
     setMinimumSize(800, 500);
@@ -87,6 +88,7 @@ void MapViewWidget::paintEvent(QPaintEvent* event)
 
     drawBackground(painter);
     drawMap(painter);
+    drawImageOverlay(painter);
     drawGrid(painter);
     drawAxes(painter);
     drawTrajectory(painter);
@@ -498,6 +500,71 @@ void MapViewWidget::drawMap(QPainter& painter)
     QRectF target(top_left.x(), top_left.y(), draw_width, draw_height);
 
     painter.drawImage(target, map_image_);
+
+    painter.restore();
+}
+
+void MapViewWidget::setImageOverlay(const ImageOverlayData& overlay_data)
+{
+    image_overlay_data_ = overlay_data;
+    has_image_overlay_ = overlay_data.valid;
+    update();
+}
+
+void MapViewWidget::clearImageOverlay()
+{
+    image_overlay_data_ = ImageOverlayData();
+    has_image_overlay_ = false;
+    update();
+}
+
+void MapViewWidget::drawImageOverlay(QPainter& painter)
+{
+    if (!has_image_overlay_ || !image_overlay_data_.valid || image_overlay_data_.image.isNull())
+    {
+        return;
+    }
+
+    painter.save();
+
+    const QPointF screen_tl = worldToScreen(image_overlay_data_.world_top_left.x(),
+                                            image_overlay_data_.world_top_left.y());
+    const QPointF screen_tr = worldToScreen(image_overlay_data_.world_top_right.x(),
+                                            image_overlay_data_.world_top_right.y());
+    const QPointF screen_bl = worldToScreen(image_overlay_data_.world_bottom_left.x(),
+                                            image_overlay_data_.world_bottom_left.y());
+
+    const QPointF top_vec = screen_tr - screen_tl;
+    const QPointF left_vec = screen_bl - screen_tl;
+
+    const double draw_width = std::hypot(top_vec.x(), top_vec.y());
+    const double draw_height = std::hypot(left_vec.x(), left_vec.y());
+
+    if (draw_width < 1.0 || draw_height < 1.0)
+    {
+        painter.restore();
+        return;
+    }
+
+    const double angle_rad = std::atan2(top_vec.y(), top_vec.x());
+    const double angle_deg = angle_rad * 180.0 / M_PI;
+
+    painter.translate(screen_tl);
+    painter.rotate(angle_deg);
+
+    painter.setOpacity(0.75);
+
+    QRectF target_rect(0.0, 0.0, draw_width, draw_height);
+    painter.drawImage(target_rect, image_overlay_data_.image);
+
+    painter.setOpacity(1.0);
+
+    // optional: draw corner markers for debugging
+    painter.setPen(QPen(QColor(255, 180, 80), 2));
+    painter.setBrush(QBrush(QColor(255, 180, 80)));
+    painter.drawEllipse(QPointF(0.0, 0.0), 4.0, 4.0);
+    painter.drawEllipse(QPointF(draw_width, 0.0), 4.0, 4.0);
+    painter.drawEllipse(QPointF(0.0, draw_height), 4.0, 4.0);
 
     painter.restore();
 }

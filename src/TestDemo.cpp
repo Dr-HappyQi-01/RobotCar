@@ -5,6 +5,7 @@
 #include <tf/tf.h> 
 #include <cmath>
 #include <random>
+#include <sqlite3.h>  // 添加SQLite头文件
 
 // 全局变量：存储机器人当前的真实坐标和朝向
 double current_x = 0.0;
@@ -12,12 +13,88 @@ double current_y = 0.0;
 double current_yaw = 0.0;
 bool odom_received = false;
 
+// 添加全局变量用于数据库操作
+sqlite3* db = nullptr;
+int episode_counter = 1;  // 回合数计数器
+std::random_device rd_reward;  // 随机奖励生成器
+std::mt19937 gen_reward(rd_reward());
+std::uniform_real_distribution<> reward_dis(-100.0, 100.0);  // -100到100的随机数分布
+
 // 里程计回调函数：实时获取机器人位置
 void odomCallback(const nav_msgs::Odometry::ConstPtr& msg) {
     current_x = msg->pose.pose.position.x;
     current_y = msg->pose.pose.position.y;
     current_yaw = tf::getYaw(msg->pose.pose.orientation);
     odom_received = true;
+}
+
+// 数据库初始化函数
+bool initDatabase() {
+    const char* db_path = "/home/s/catkin_ws/src/robot_monitor/data/trajectory.db";
+    int rc = sqlite3_open(db_path, &db);
+    
+    if (rc != SQLITE_OK) {
+        ROS_ERROR("Cannot open database: %s", sqlite3_errmsg(db));
+        return false;
+    }
+    
+    // 创建表（如果不存在）
+    const char* create_table_sql = R"(
+        CREATE TABLE IF NOT EXISTS method_episode_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            method_name TEXT NOT NULL, 
+            episode INTEGER NOT NULL, 
+            reward REAL NOT NULL, 
+            timestamp REAL DEFAULT 0
+        );
+    )";
+    
+    char* err_msg = 0;
+    rc = sqlite3_exec(db, create_table_sql, 0, 0, &err_msg);
+    
+    if (rc != SQLITE_OK) {
+        ROS_ERROR("SQL error: %s", err_msg);
+        sqlite3_free(err_msg);
+        return false;
+    }
+    
+    ROS_INFO("Database initialized successfully.");
+    return true;
+}
+
+// 插入奖励数据到数据库
+bool insertEpisodeReward(const std::string& method_name, int episode, double reward, double timestamp) {
+    if (!db) {
+        ROS_ERROR("Database not initialized!");
+        return false;
+    }
+    
+    const char* sql = "INSERT INTO method_episode_rewards (method_name, episode, reward, timestamp) VALUES (?, ?, ?, ?);";
+    sqlite3_stmt* stmt;
+    
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        ROS_ERROR("Failed to prepare statement: %s", sqlite3_errmsg(db));
+        return false;
+    }
+    
+    sqlite3_bind_text(stmt, 1, method_name.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, episode);
+    sqlite3_bind_double(stmt, 3, reward);
+    sqlite3_bind_double(stmt, 4, timestamp);
+    
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        ROS_ERROR("Failed to insert data: %s", sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        return false;
+    }
+    
+    sqlite3_finalize(stmt);
+    ROS_INFO("Inserted reward: Method='%s', Episode=%d, Reward=%.2f, Timestamp=%.2f", 
+             method_name.c_str(), episode, reward, timestamp);
+    
+    return true;
 }
 
 // 三段式状态机
@@ -32,8 +109,8 @@ int main(int argc, char** argv) {
     ros::NodeHandle nh;
 
     // 订阅里程计，发布速度与状态
-    ros::Subscriber odom_sub = nh.subscribe("/robot/robotnik_base_control/odom", 10, odomCallback);
-    ros::Publisher cmd_pub = nh.advertise<geometry_msgs::Twist>("/robot/cmd_vel", 10);
+    ros::Subscriber odom_sub = nh.subscribe("/odom", 10, odomCallback);
+    ros::Publisher cmd_pub = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 10);
     ros::Publisher status_pub = nh.advertise<std_msgs::String>("/experiment/episode_event", 10);
 
     ros::Rate loop_rate(20); 
@@ -66,6 +143,12 @@ int main(int argc, char** argv) {
         loop_rate.sleep();
     }
     ROS_INFO("Odometry received! Starting autonomous navigation & drawing task.");
+
+    // 初始化数据库连接
+    if (!initDatabase()) {
+        ROS_ERROR("Failed to initialize database, shutting down...");
+        return -1;
+    }
 
     while (ros::ok()) {
         geometry_msgs::Twist cmd;
@@ -136,11 +219,22 @@ int main(int argc, char** argv) {
                     cmd.linear.x = 0.0;
                     cmd.angular.z = 0.0;
                     
+                    // 生成随机奖励值 (-100 到 100)
+                    double reward = reward_dis(gen_reward);
+                    double current_timestamp = ros::Time::now().toSec();
+                    
+                    // 插入数据库
+                    insertEpisodeReward("方法一", episode_counter, reward, current_timestamp);
+                    
                     // 发布【结束】信号
                     status_msg.data = "end";
                     status_pub.publish(status_msg);
-                    ROS_INFO("Event Published: %s | Circle completed.", status_msg.data.c_str());
+                    ROS_INFO("Event Published: %s | Circle completed. Reward: %.2f | Episode: %d", 
+                             status_msg.data.c_str(), reward, episode_counter);
 
+                    // 回合数递增
+                    episode_counter++;
+                    
                     // 切回第一步，重新生成下一个随机点，循环往复
                     state = GENERATE_NEW_TARGET;
                 }
@@ -152,6 +246,11 @@ int main(int argc, char** argv) {
         cmd_pub.publish(cmd);
         ros::spinOnce();
         loop_rate.sleep();
+    }
+    
+    // 关闭数据库连接
+    if (db) {
+        sqlite3_close(db);
     }
 
     return 0;

@@ -30,6 +30,13 @@ struct TrajectoryRecord
     std::vector<TrajectoryPoint> points;
 };
 
+struct EpisodeRewardPoint
+{
+    int episode = 0;
+    double reward = 0.0;
+    double timestamp = 0.0;
+};
+
 }  // namespace robot_monitor
 
 #endif  // ROBOT_MONITOR_TRAJECTORY_TYPES_H

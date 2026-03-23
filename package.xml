@@ -72,6 +72,7 @@
   <depend>image_transport</depend>
   <depend>cv_bridge</depend>
   <depend>opencv2</depend>
+  <depend>yaml-cpp</depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

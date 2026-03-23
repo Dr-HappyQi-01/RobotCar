@@ -14,10 +14,12 @@ RosInterface::~RosInterface()
 {
 }
 
-bool RosInterface::init(ros::NodeHandle& nh, const std::string& odom_topic)
+bool RosInterface::init(ros::NodeHandle& nh,
+                        const std::string& odom_topic,
+                        const std::string& map_topic)
 {
     odom_sub_ = nh.subscribe(odom_topic, 10, &RosInterface::odomCallback, this);
-    map_sub_ = nh.subscribe("/map", 1, &RosInterface::mapCallback, this);
+    map_sub_ = nh.subscribe(map_topic, 1, &RosInterface::mapCallback, this);
     return true;
 }
 

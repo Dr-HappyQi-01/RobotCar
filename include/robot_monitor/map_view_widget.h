@@ -27,6 +27,8 @@ public:
     void clearSelectedTrajectory();
     void setMapData(const GridMapData& map_data);
     void clearMapData();
+    void setImageOverlay(const ImageOverlayData& overlay_data);
+    void clearImageOverlay();
     
 
 protected:
@@ -50,6 +52,9 @@ private:
     void appendTrajectoryPoint(double x, double y);
     void drawMap(QPainter& painter);
     void rebuildMapImage();
+    void drawImageOverlay(QPainter& painter);
+
+
 
 
 
@@ -77,6 +82,9 @@ private:
     GridMapData map_data_;
     QImage map_image_;
     bool has_map_;
+
+    ImageOverlayData image_overlay_data_;
+    bool has_image_overlay_;
 };
 
 }  // namespace robot_monitor

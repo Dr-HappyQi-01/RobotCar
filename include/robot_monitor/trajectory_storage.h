@@ -34,6 +34,16 @@ public:
     bool deleteTrajectoryById(int trajectory_id, std::string& error_message);
     bool deleteTrajectoriesByMethod(const std::string& method_name, std::string& error_message);
 
+    bool insertEpisodeReward(const std::string& method_name,
+                        int episode,
+                        double reward,
+                        double timestamp,
+                        std::string& error_message);
+
+    bool loadEpisodeRewardsByMethod(const std::string& method_name,
+                                    std::vector<EpisodeRewardPoint>& rewards,
+                                    std::string& error_message);
+
 private:
     bool executeSql(const std::string& sql, std::string& error_message);
 
